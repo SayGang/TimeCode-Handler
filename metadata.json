@@ -1,0 +1,5 @@
+{
+  "name": "Time Tracking Portal",
+  "description": "A comprehensive time tracking portal for organizations to monitor agent productivity through various timecodes. Features day, week, and admin views with detailed visualizations.",
+  "requestFramePermissions": []
+}
