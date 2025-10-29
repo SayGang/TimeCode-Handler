@@ -1,5 +1,5 @@
 import React from 'react';
-import { TimecodeEnum } from '../types.js';
+import { TimecodeEnum, TimeLog } from '../types.js';
 import { TIMECODE_CONFIG } from '../constants.js';
 import { formatDuration, calculateTotals } from '../utils/time.js';
 

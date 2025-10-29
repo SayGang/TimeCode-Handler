@@ -1,17 +1,24 @@
 import React, { useState, useMemo, useCallback, useEffect } from 'react';
-import { Role, TimecodeEnum } from '../types.js';
+import { Role, TimecodeEnum, User } from '../types.js';
 import { Header } from './Header.jsx';
 import { DayView } from './DayView.jsx';
 import { WeekView } from './WeekView.jsx';
 import { AdminView } from './AdminView.jsx';
-import { calculateTotals } from '../utils/time.js';
+import { calculateTotals, parseLogDates } from '../utils/time.js';
 import { ChevronLeftIcon, ChevronRightIcon } from './icons.jsx';
+import { api } from '../utils/api.js';
+import { LogDetailsModal } from './LogDetailsModal.jsx';
 
-export const Portal = ({ user, onSignOut, theme, setTheme, allTimeLogs, setAllTimeLogs }) => {
+export const Portal = ({ user, updateUser, onSignOut, theme, setTheme }) => {
   const [viewMode, setViewMode] = useState('day');
   const [selectedAgent, setSelectedAgent] = useState(user.role === Role.Admin ? null : user);
   const [displayDate, setDisplayDate] = useState(new Date());
   const [now, setNow] = useState(new Date());
+  const [userLogs, setUserLogs] = useState([]);
+  const [isLoadingLogs, setIsLoadingLogs] = useState(true);
+  const [errorLogs, setErrorLogs] = useState(null);
+  const [selectedLog, setSelectedLog] = useState(null);
+
 
   useEffect(() => {
     const timer = setInterval(() => setNow(new Date()), 1000);
@@ -19,54 +26,52 @@ export const Portal = ({ user, onSignOut, theme, setTheme, allTimeLogs, setAllTi
   }, []);
 
   const effectiveUser = selectedAgent || user;
-  const userLogs = useMemo(() => allTimeLogs[effectiveUser.id] || [], [allTimeLogs, effectiveUser.id]);
 
-  // Create initial log for the current logged-in user if they have no logs.
+  const fetchLogs = useCallback(async (userId) => {
+    try {
+      setIsLoadingLogs(true);
+      setErrorLogs(null);
+      const logs = await api.getUserLogs(userId);
+      setUserLogs(logs.map(parseLogDates).sort((a,b) => a.startTime - b.startTime));
+    } catch (err) {
+      setErrorLogs(err.message || 'Failed to fetch time logs.');
+    } finally {
+      setIsLoadingLogs(false);
+    }
+  }, []);
+
   useEffect(() => {
-      if(user && user.id === effectiveUser.id && userLogs.length === 0) {
-          const newLog = {
-              userId: user.id,
-              code: TimecodeEnum.Unavailable,
-              startTime: new Date(),
-              endTime: null,
-          };
-          setAllTimeLogs(prev => ({ ...prev, [user.id]: [newLog] }));
-      }
-  }, [user, effectiveUser.id, userLogs.length, setAllTimeLogs]);
+    if (effectiveUser) {
+      fetchLogs(effectiveUser.id);
+    } else {
+      setUserLogs([]); // Clear logs when in admin root view
+    }
+  }, [effectiveUser, fetchLogs]);
   
   const currentTimecode = useMemo(() => {
     if (userLogs.length > 0) {
       const lastLog = userLogs[userLogs.length - 1];
       if (lastLog.endTime === null) return lastLog.code;
     }
-    // If last log is finished, or no logs, they are unavailable
     return TimecodeEnum.Unavailable;
   }, [userLogs]);
 
-  const changeTimecode = useCallback((newCode) => {
+  const changeTimecode = useCallback(async (newCode) => {
     if (!effectiveUser || user.id !== effectiveUser.id) return;
     
-    const now = new Date();
-    const currentLogs = [...(allTimeLogs[effectiveUser.id] || [])];
-    
-    const lastLog = currentLogs.length > 0 ? currentLogs[currentLogs.length - 1] : null;
+    const lastLog = userLogs.length > 0 ? userLogs[userLogs.length - 1] : null;
     if (lastLog && lastLog.code === newCode && lastLog.endTime === null) {
-        return; // Avoid creating duplicate entries
+        return; 
     }
     
-    if (lastLog && lastLog.endTime === null) {
-      lastLog.endTime = now;
+    try {
+        await api.changeTimecode(newCode);
+        await fetchLogs(user.id); // Refetch logs to get server-updated data
+    } catch(err) {
+        console.error("Failed to change timecode", err);
+        // Optionally show an error to the user
     }
-
-    currentLogs.push({
-      userId: effectiveUser.id,
-      code: newCode,
-      startTime: now,
-      endTime: null,
-    });
-    
-    setAllTimeLogs(prev => ({ ...prev, [effectiveUser.id]: currentLogs }));
-  }, [effectiveUser, user.id, allTimeLogs, setAllTimeLogs]);
+  }, [effectiveUser, user.id, userLogs, fetchLogs]);
   
   const totals = useMemo(() => calculateTotals(userLogs, displayDate, now), [userLogs, displayDate, now]);
   
@@ -89,23 +94,27 @@ export const Portal = ({ user, onSignOut, theme, setTheme, allTimeLogs, setAllTi
   
   const handleAgentClick = (agent) => {
     setSelectedAgent(agent);
-    setDisplayDate(new Date()); // Reset date when switching agent
-    setViewMode('day'); // Switch to day view for the selected agent
+    setDisplayDate(new Date()); 
+    setViewMode('day');
   }
   
   const handleBackToAdmin = () => {
     setSelectedAgent(null);
   }
+
+  const handleLogUpdate = (updatedLog) => {
+    setUserLogs(prevLogs => prevLogs.map(log => log.id === updatedLog.id ? parseLogDates(updatedLog) : log));
+  };
   
-  const isOwnView = user.id === effectiveUser.id;
+  const isOwnView = user.id === effectiveUser?.id;
 
   return (
     <div className="min-h-screen flex flex-col bg-light-bg dark:bg-dark-bg text-light-text dark:text-dark-text">
-      <Header user={user} currentTimecode={currentTimecode} onTimecodeChange={changeTimecode} onSignOut={onSignOut} theme={theme} setTheme={setTheme} isInteractive={isOwnView} />
+      <Header user={user} updateUser={updateUser} currentTimecode={currentTimecode} onTimecodeChange={changeTimecode} onSignOut={onSignOut} theme={theme} setTheme={setTheme} isInteractive={isOwnView} />
       
       <main className="flex-grow">
         {user.role === Role.Admin && !selectedAgent ? (
-          <AdminView onAgentClick={handleAgentClick} allTimeLogs={allTimeLogs} />
+          <AdminView onAgentClick={handleAgentClick} />
         ) : (
           <>
             <div className="p-4 sm:p-6 flex flex-col sm:flex-row justify-between items-center gap-4 border-b border-light-border dark:border-dark-border flex-wrap">
@@ -132,11 +141,14 @@ export const Portal = ({ user, onSignOut, theme, setTheme, allTimeLogs, setAllTi
                 </div>
               </div>
             </div>
-            {viewMode === 'day' && <DayView logs={userLogs} totals={totals} now={now} />}
-            {viewMode === 'week' && <WeekView startDate={displayDate} onDayClick={handleDayClick} allLogsForUser={userLogs} />}
+            {isLoadingLogs && <div className="p-6">Loading logs...</div>}
+            {errorLogs && <div className="p-6 text-red-500">{errorLogs}</div>}
+            {!isLoadingLogs && !errorLogs && viewMode === 'day' && <DayView logs={userLogs} totals={totals} now={now} onLogClick={setSelectedLog} />}
+            {!isLoadingLogs && !errorLogs && viewMode === 'week' && <WeekView startDate={displayDate} onDayClick={handleDayClick} allLogsForUser={userLogs} />}
           </>
         )}
       </main>
+      {selectedLog && <LogDetailsModal log={selectedLog} onClose={() => setSelectedLog(null)} onUpdate={handleLogUpdate} isEditable={isOwnView} />}
     </div>
   );
 };

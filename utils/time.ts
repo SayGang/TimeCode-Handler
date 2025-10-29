@@ -1,4 +1,10 @@
-import { TimecodeEnum } from '../types.js';
+import { TimecodeEnum, TimeLog } from '../types.js';
+
+export const parseLogDates = (log) => ({
+  ...log,
+  startTime: new Date(log.startTime),
+  endTime: log.endTime ? new Date(log.endTime) : null,
+});
 
 export const formatDuration = (totalSeconds) => {
   if (totalSeconds < 0) totalSeconds = 0;
@@ -11,7 +17,7 @@ export const formatDuration = (totalSeconds) => {
     .join(':');
 };
 
-export const calculateTotals = (logs, targetDate, now) => {
+export const calculateTotals = (logs: TimeLog[], targetDate, now) => {
   const totals = {
     [TimecodeEnum.Production]: 0,
     [TimecodeEnum.Session]: 0,

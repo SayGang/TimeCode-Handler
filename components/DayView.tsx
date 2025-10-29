@@ -1,9 +1,10 @@
 import React from 'react';
-import { TimecodeEnum } from '../types.js';
+import { TimecodeEnum, TimeLog } from '../types.js';
 import { TIMECODE_CONFIG } from '../constants.js';
 import { formatDuration } from '../utils/time.js';
+import { PencilSquareIcon } from './icons.jsx';
 
-const TimelineBar = ({ log, now }) => {
+const TimelineBar = ({ log, now, onLogClick }) => {
     const startOfDay = new Date(log.startTime);
     startOfDay.setHours(0, 0, 0, 0);
     const totalDaySeconds = 24 * 60 * 60;
@@ -27,16 +28,26 @@ const TimelineBar = ({ log, now }) => {
     if (width <= 0) return null;
 
     return (
-        <div
-            className={`absolute h-full ${config.color} rounded transition-all duration-300 ease-in-out`}
+        <button
+            className={`absolute h-full ${config.color} rounded transition-all duration-300 ease-in-out group flex items-center justify-center`}
             style={{ left: `${left}%`, width: `${width}%` }}
             title={`${log.code}: ${formatDuration(durationSeconds)}`}
-        ></div>
+            onClick={() => onLogClick(log)}
+        >
+            {log.details && <PencilSquareIcon className="w-4 h-4 text-white opacity-0 group-hover:opacity-100 transition-opacity" />}
+        </button>
     );
 };
 
-export const DayView = ({ logs, totals, now }) => {
+export const DayView = ({ logs, totals, now, onLogClick }) => {
   const hours = Array.from({ length: 5 }, (_, i) => i * 6);
+
+  const dayLogs = logs.filter(log => {
+      const logDate = new Date(log.startTime);
+      const today = new Date(now);
+      return logDate.getDate() === today.getDate() && logDate.getMonth() === today.getMonth() && logDate.getFullYear() === today.getFullYear();
+  });
+
 
   return (
     <div className="p-4 sm:p-6 space-y-6">
@@ -61,8 +72,8 @@ export const DayView = ({ logs, totals, now }) => {
               <div key={code} className="grid grid-cols-[120px_1fr] items-center gap-4">
                 <span className="font-semibold text-sm truncate">{code}</span>
                 <div className="relative h-6 bg-light-bg-tertiary dark:bg-dark-bg-tertiary rounded">
-                    {codeLogs.map((log, index) => (
-                        <TimelineBar key={index} log={log} now={now} />
+                    {codeLogs.map((log) => (
+                        <TimelineBar key={log.id} log={log} now={now} onLogClick={onLogClick} />
                     ))}
                 </div>
               </div>
